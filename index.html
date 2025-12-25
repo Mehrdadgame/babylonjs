@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Babylon.js AR Frame Tracker</title>
+    <title>Lightweight AR Tracker</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
@@ -20,40 +20,37 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // 1. ساخت محیط پایه (دوربین و نور)
-            // این دوربین فقط وقتی کار می‌کند که هنوز وارد AR نشده‌اید
+            // دوربین معمولی (قبل از AR)
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // 2. سیستم نمایش پیام (UI) روی صفحه موبایل
+            // UI برای دیباگ
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "Loading AR...";
-            statusText.color = "#ffff00"; // زرد
-            statusText.fontSize = 22;
+            statusText.text = "Initializing Lite Mode...";
+            statusText.color = "yellow";
+            statusText.fontSize = 20;
             statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            statusText.top = "-100px"; // کمی بالاتر از پایین صفحه
-            statusText.textWrapping = true;
+            statusText.top = "-100px";
             advancedTexture.addControl(statusText);
 
-            // 3. ساخت آبجکتی که قرار است روی QR Code (Frame) ظاهر شود
-            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene); // مکعب 15 سانتی
+            // مکعب (نشانگر)
+            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene);
             const mat = new BABYLON.StandardMaterial("boxMat", scene);
-            mat.diffuseColor = new BABYLON.Color3(0, 1, 0); // سبز
+            mat.diffuseColor = new BABYLON.Color3(0, 1, 1); // فیروزه‌ای
             box.material = mat;
-            box.isVisible = false; // فعلاً مخفی باشد تا تصویر پیدا شود
+            box.isVisible = false; 
 
-            // 4. تنظیمات WebXR و Image Tracking
+            // تنظیمات Image Tracking
+            const trackableImage = {
+                src: "frame.png", 
+                estimatedRealWorldWidth: 0.2 
+            };
+
             try {
-                // نام فایل عکس شما در گیت‌هاب frame.png است
-                // estimatedRealWorldWidth: پهنای واقعی عکسی که پرینت می‌کنید (به متر). مثلا 0.2 یعنی 20 سانت
-                const trackableImage = {
-                    src: "frame.png", 
-                    estimatedRealWorldWidth: 0.2 
-                };
-
-                // درخواست شروع Session واقعیت افزوده
+                // *** تغییرات مهم اینجاست ***
+                // ما ویژگی‌های اضافی را خاموش می‌کنیم تا ارور ندهد
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
@@ -62,47 +59,42 @@
                             statusText.color = "red";
                         }
                     },
-                    optionalFeatures: true // جلوگیری از کرش کردن اگر فیچری نبود
+                    // غیرفعال کردن قابلیت‌هایی که ممکن است باعث ارور شوند:
+                    disableTeleportation: true,      // تله‌پورت خاموش
+                    disablePointerSelection: true,   // انتخابگر خاموش
+                    disableNearInteraction: true,    // تعامل نزدیک خاموش
+                    optionalFeatures: true           // همه چیز را اختیاری کن
                 });
 
                 const featuresManager = xr.baseExperience.featuresManager;
 
-                // فعال‌سازی قابلیت ردیابی تصویر
+                // فعال‌سازی Image Tracking
                 const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
                     images: [trackableImage]
                 });
 
-                statusText.text = "AR Ready. Point camera at 'frame.png'";
+                statusText.text = "AR Ready (Lite Mode).\nPoint at frame.png";
                 statusText.color = "white";
 
-                // رویداد: وقتی تصویر پیدا شد یا مکانش آپدیت شد
                 imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                    // نمایش مکعب
                     box.isVisible = true;
-                    
-                    // انتقال مکعب دقیقاً روی عکس واقعی
                     imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                    
-                    // نمایش مختصات برای اطمینان
-                    statusText.text = `Found!\nX: ${box.position.x.toFixed(2)} Y: ${box.position.y.toFixed(2)}`;
-                    statusText.color = "#00ff00"; // سبز روشن
+                    statusText.text = "FOUND!";
+                    statusText.color = "#00ff00";
                 });
 
             } catch (e) {
                 console.error(e);
-                statusText.text = "Error: " + e.message;
+                statusText.text = "Critical Error: " + e.message;
                 statusText.color = "red";
             }
 
             return scene;
         };
 
-        // اجرای صحنه
         createScene().then(scene => {
             engine.runRenderLoop(() => scene.render());
         });
-
-        // تغییر سایز صفحه
         window.addEventListener("resize", () => engine.resize());
     </script>
 </body>
