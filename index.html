@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AR QR Tracking</title>
+    <title>Babylon.js AR Frame Tracker</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
     <style>
         html, body { overflow: hidden; width: 100%; height: 100%; margin: 0; padding: 0; }
-        #renderCanvas { width: 100%; height: 100%; touch-action: none; }
+        #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; }
     </style>
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
+    
     <script>
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true);
@@ -19,80 +20,90 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // دوربین معمولی برای زمانی که AR فعال نیست
+            // 1. ساخت محیط پایه (دوربین و نور)
+            // این دوربین فقط وقتی کار می‌کند که هنوز وارد AR نشده‌اید
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // UI برای دیباگ
+            // 2. سیستم نمایش پیام (UI) روی صفحه موبایل
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-            const debugText = new BABYLON.GUI.TextBlock();
-            debugText.text = "Please open in Google Chrome Android";
-            debugText.color = "yellow";
-            debugText.fontSize = 24;
-            debugText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            debugText.top = "-50px";
-            advancedTexture.addControl(debugText);
+            const statusText = new BABYLON.GUI.TextBlock();
+            statusText.text = "Loading AR...";
+            statusText.color = "#ffff00"; // زرد
+            statusText.fontSize = 22;
+            statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+            statusText.top = "-100px"; // کمی بالاتر از پایین صفحه
+            statusText.textWrapping = true;
+            advancedTexture.addControl(statusText);
 
-            // ساخت مکعب (نشانگر)
-            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.1}, scene);
-            const mat = new BABYLON.StandardMaterial("mat", scene);
+            // 3. ساخت آبجکتی که قرار است روی QR Code (Frame) ظاهر شود
+            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene); // مکعب 15 سانتی
+            const mat = new BABYLON.StandardMaterial("boxMat", scene);
             mat.diffuseColor = new BABYLON.Color3(0, 1, 0); // سبز
             box.material = mat;
-            box.isVisible = false; 
+            box.isVisible = false; // فعلاً مخفی باشد تا تصویر پیدا شود
 
-            // شروع تنظیمات WebXR
+            // 4. تنظیمات WebXR و Image Tracking
             try {
-                // تنظیمات Image Tracking
-                const xrImage = {
-                   src: "frame.png", 
-                    estimatedRealWorldWidth: 0.2
+                // نام فایل عکس شما در گیت‌هاب frame.png است
+                // estimatedRealWorldWidth: پهنای واقعی عکسی که پرینت می‌کنید (به متر). مثلا 0.2 یعنی 20 سانت
+                const trackableImage = {
+                    src: "frame.png", 
+                    estimatedRealWorldWidth: 0.2 
                 };
 
-                // مرحله 1: درخواست Session
+                // درخواست شروع Session واقعیت افزوده
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
                         onError: (error) => {
-                            debugText.text = "Session Error: " + error.message;
-                            debugText.color = "red";
+                            statusText.text = "Session Error: " + error.message;
+                            statusText.color = "red";
                         }
                     },
-                    // مهم: غیرفعال کردن ویژگی‌های اضافی که ممکن است باعث ارور شود
-                    optionalFeatures: true, 
+                    optionalFeatures: true // جلوگیری از کرش کردن اگر فیچری نبود
                 });
 
-                // مرحله 2: فعال کردن Image Tracking
                 const featuresManager = xr.baseExperience.featuresManager;
-                
+
+                // فعال‌سازی قابلیت ردیابی تصویر
                 const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                    images: [xrImage]
+                    images: [trackableImage]
                 });
 
-                debugText.text = "AR Ready. Point at QR.";
+                statusText.text = "AR Ready. Point camera at 'frame.png'";
+                statusText.color = "white";
 
-                // وقتی تصویر پیدا شد
+                // رویداد: وقتی تصویر پیدا شد یا مکانش آپدیت شد
                 imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
+                    // نمایش مکعب
                     box.isVisible = true;
+                    
+                    // انتقال مکعب دقیقاً روی عکس واقعی
                     imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                    debugText.text = "QR Found!";
-                    debugText.color = "#00ff00";
+                    
+                    // نمایش مختصات برای اطمینان
+                    statusText.text = `Found!\nX: ${box.position.x.toFixed(2)} Y: ${box.position.y.toFixed(2)}`;
+                    statusText.color = "#00ff00"; // سبز روشن
                 });
 
             } catch (e) {
                 console.error(e);
-                debugText.text = "Global Error: " + e.message;
-                debugText.color = "red";
+                statusText.text = "Error: " + e.message;
+                statusText.color = "red";
             }
 
             return scene;
         };
 
+        // اجرای صحنه
         createScene().then(scene => {
             engine.runRenderLoop(() => scene.render());
         });
+
+        // تغییر سایز صفحه
         window.addEventListener("resize", () => engine.resize());
     </script>
 </body>
 </html>
-
