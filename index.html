@@ -20,15 +20,17 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // دوربین معمولی
+            // دوربین معمولی برای حالتی که AR فعال نیست (یا برای دیباگ)
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
+            // camera.attachControl(canvas, true); // نیازی به کنترل در AR نیست
+
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
             // UI دیباگ
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "Initializing...";
+            statusText.text = "Initializing WebXR...";
             statusText.color = "yellow";
             statusText.fontSize = 18;
             statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
@@ -40,56 +42,86 @@
             const mat = new BABYLON.StandardMaterial("boxMat", scene);
             mat.diffuseColor = new BABYLON.Color3(0, 1, 0); 
             box.material = mat;
-            box.isVisible = false; 
+            box.isVisible = false; // مکعب در ابتدا مخفی است
 
-            // تنظیمات عکس
+            // تنظیمات عکس QR
             const trackableImage = {
-                src: "frame.png", 
-                estimatedRealWorldWidth: 0.2 
+                src: "frame.png", // حتماً مطمئن شوید این فایل (frame.png) در کنار index.html قرار دارد
+                estimatedRealWorldWidth: 0.2 // اندازه واقعی QR Code در دنیای واقعی به متر (مثلا 20 سانت = 0.2 متر)
             };
 
             try {
-                // *** تغییر حیاتی برای رفع ارور requiredFeatures ***
+                // *** تغییرات حیاتی برای رفع ارور requiredFeatures ***
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
-                        // نکته کلیدی: تغییر درخواست از "کف زمین" به "لوکال" ساده
-                        referenceSpaceType: "local", 
+                        referenceSpaceType: "local", // حالت "local" معمولاً پایه و سازگارتر است
                         onError: (error) => {
-                            statusText.text = "Session Error: " + error.message;
+                            statusText.text = `Session UI Error: ${error.message}. Check device/browser support.`;
                             statusText.color = "red";
+                            console.error("WebXR UI Error:", error);
                         }
                     },
-                    // همه فیچرهای دیگر را خاموش یا اختیاری می‌کنیم
-                    optionalFeatures: true,
+                    // مهمترین تغییر: هیچ ویژگی‌ای را REQUIRED نکنید!
+                    requiredFeatures: [], 
+                    // image-tracking را به عنوان یک ویژگی OPTIONAL (اختیاری) در زمان درخواست سشن اضافه کنید
+                    optionalFeatures: [BABYLON.WebXRFeatureName.IMAGE_TRACKING],
+                    
+                    // می‌توانید ویژگی‌های اضافی مانند Teleportation و Pointer Selection را غیرفعال کنید اگر نمی‌خواهید
                     disableTeleportation: true,
                     disablePointerSelection: true
                 });
 
                 const featuresManager = xr.baseExperience.featuresManager;
-
-                // فعال‌سازی Image Tracking
-                try {
-                    const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                        images: [trackableImage]
-                    });
-
-                    statusText.text = "Ready. Point at frame.png";
+                
+                // حالا که سشن XR آغاز شده، بررسی می‌کنیم که آیا Image Tracking واقعاً فعال شده است یا خیر
+                if (featuresManager.is
+                FeatureEnabled(BABYLON.WebXRFeatureName.IMAGE_TRACKING)) {
+                    statusText.text = "WebXR AR Ready. Looking for frame.png...";
                     statusText.color = "white";
 
-                    imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
+                    // Image Tracking Feature را دریافت کنید (چون قبلاً به عنوان optional request شده بود)
+                    const imageTracking = featuresManager.getFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING);
+
+                    // تصاویر قابل ردیابی را به Image Tracking Feature اضافه کنید (حتی اگر در optionalFeatures بود، اینجا پیکربندی می‌شود)
+                    imageTracking.setTrackedImages([trackableImage]);
+
+                    // رویدادها برای ردیابی تصویر
+                    imageTracking.onTrackedImageAddedObservable.add((imageObject) => {
+                        console.log("Tracked Image Added:", imageObject.id, imageObject.url);
                         box.isVisible = true;
+                        // پوزیشن و چرخش مکعب را با تصویر هماهنگ کنید
                         imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                        statusText.text = "Target Found!";
+                        statusText.text = `Target Found! Pos: X:${box.position.x.toFixed(2)} Y:${box.position.y.toFixed(2)} Z:${box.position.z.toFixed(2)}`;
                         statusText.color = "#00ff00";
                     });
-                } catch(err) {
-                    statusText.text = "Image Tracking Failed: " + err.message;
+
+                    imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
+                        // فقط اگر imageObject هنوز معتبر است و مکعب مرئی است، پوزیشن را آپدیت کنید
+                        if (imageObject.transformationMatrix && box.isVisible) {
+                           imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
+                           statusText.text = `Target Tracking. Pos: X:${box.position.x.toFixed(2)} Y:${box.position.y.toFixed(2)} Z:${box.position.z.toFixed(2)}`;
+                           statusText.color = "#00ff00";
+                        }
+                    });
+
+                    imageTracking.onTrackedImageRemovedObservable.add((imageObject) => {
+                        console.log("Tracked Image Removed:", imageObject.id);
+                        box.isVisible = false;
+                        statusText.text = "Target Lost! Looking again...";
+                        statusText.color = "orange";
+                    });
+
+                } else {
+                    // اگر Image Tracking فعال نشد (یعنی دستگاه پشتیبانی نمی‌کند)
+                    statusText.text = "WebXR Image Tracking is NOT SUPPORTED on this device/browser.";
+                    statusText.color = "red";
+                    console.warn("WebXR Image Tracking is not supported on this device.");
                 }
 
             } catch (e) {
-                console.error(e);
-                statusText.text = "Startup Error: " + e.message;
+                console.error("WebXR Startup Error:", e);
+                statusText.text = `Startup Error: ${e.message}. Is WebXR supported?`;
                 statusText.color = "red";
             }
 
