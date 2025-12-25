@@ -1,37 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>AR Transparent Fix</title>
+    <title>Three.js AR Camera Test</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        /* 1. شفاف کردن اجباری پس‌زمینه HTML و Body */
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: transparent !important; /* خیلی مهم */
-        }
-        
-        /* استایل دکمه و دیباگ */
-        #debug {
-            position: absolute; top: 10px; left: 10px; color: cyan;
-            font-size: 18px; font-weight: bold; pointer-events: none; z-index: 100;
-            text-shadow: 2px 2px 4px #000;
-        }
-        #ar-button {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            padding: 15px 30px; border: 2px solid cyan; border-radius: 30px;
-            background: rgba(0, 0, 0, 0.6); color: cyan; font-size: 18px;
-            font-weight: bold; cursor: pointer; z-index: 999; display: none;
-        }
-        canvas {
-            display: block; 
-        }
+        /* شفاف کردن همه چیز */
+        body { margin: 0; background-color: transparent !important; overflow: hidden; }
+        canvas { display: block; }
     </style>
-    
     <script type="importmap">
         {
             "imports": {
@@ -42,115 +19,57 @@
     </script>
 </head>
 <body>
-    <div id="debug">Loading...</div>
-    <button id="ar-button">START AR EXPERIENCE</button>
-
     <script type="module">
         import * as THREE from 'three';
+        import { ARButton } from 'three/addons/webxr/ARButton.js';
 
         let camera, scene, renderer;
-        let trackedMesh; // مکعبی که روی عکس می‌چسبد (قرمز)
-        let testCube;    // مکعبی که همینطوری جلوی دوربین است (زرد) - برای تست
-        
-        const debugDiv = document.getElementById('debug');
-        const arButton = document.getElementById('ar-button');
-
-        const IMAGE_URL = 'target.jpg'; 
-        const IMAGE_WIDTH = 0.2; 
+        let mesh;
 
         init();
+        animate();
 
-        async function init() {
-            // ساخت صحنه
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            // 1. ساخت صحنه
             scene = new THREE.Scene();
-            
-            // دوربین
+            // نکته حیاتی: پس‌زمینه حتما باید نال باشد تا دوربین دیده شود
+            scene.background = null; 
+
+            // 2. دوربین
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // نور
+            // 3. نور
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
             scene.add(light);
 
-            // === 2. تنظیمات حیاتی برای شفافیت (Renderer) ===
-            renderer = new THREE.WebGLRenderer({ 
-                antialias: true, 
-                alpha: true // <--- این خط حیاتی است: اجازه می‌دهد پشت بوم نقاشی شفاف باشد
-            });
+            // 4. رندرر با شفافیت فعال
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
-            
-            // === 3. پاک کردن صفحه با رنگ شفاف ===
-            renderer.setClearColor(0x000000, 0); // رنگ سیاه با شفافیت صفر (یعنی نامرئی)
-            
-            renderer.xr.enabled = true; 
-            renderer.xr.setReferenceSpaceType('local'); 
-            
-            document.body.appendChild(renderer.domElement);
+            // پاک کردن رنگ پس‌زمینه (شفافیت مطلق)
+            renderer.setClearColor(0x000000, 0); 
+            renderer.xr.enabled = true;
+            container.appendChild(renderer.domElement);
 
-            // --- ساخت آبجکت‌ها ---
+            // 5. یک مکعب چرخنده برای تست (بدون نیاز به عکس)
+            // این مکعب باید روی تصویر دوربین شناور شود
+            const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+            const material = new THREE.MeshNormalMaterial({ wireframe: true }); 
+            mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(0, 0, -0.5); // نیم متر جلوی دوربین
+            scene.add(mesh);
 
-            // الف) مکعب قرمز (فقط وقتی عکس پیدا شد دیده می‌شود)
-            const boxGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
-            const boxMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-            trackedMesh = new THREE.Mesh(boxGeo, boxMat);
-            trackedMesh.matrixAutoUpdate = false; 
-            trackedMesh.visible = false; 
-            scene.add(trackedMesh);
-
-            // ب) مکعب زرد تست (همیشه جلوی دوربین می‌چرخد تا بفهمیم AR کار می‌کند)
-            const testGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
-            const testMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true });
-            testCube = new THREE.Mesh(testGeo, testMat);
-            testCube.position.set(0, 0, -0.5); // نیم متر جلوی دوربین
-            // testCube را به scene اضافه نمی‌کنیم، به دوربین اضافه می‌کنیم که همیشه جلو چشم باشد (اختیاری)
-            // فعلا به صحنه اضافه می‌کنیم اما جلوی دوربین
-            scene.add(testCube); 
-
-            debugDiv.innerHTML = "Loading Image...";
-
-            try {
-                const response = await fetch(IMAGE_URL);
-                const blob = await response.blob();
-                const imageBitmap = await createImageBitmap(blob);
-
-                debugDiv.innerHTML = "Ready. Tap Start.";
-                arButton.style.display = "block";
-
-                arButton.addEventListener('click', async () => {
-                    try {
-                        arButton.style.display = "none";
-                        debugDiv.innerHTML = "Starting Camera...";
-                        
-                        const session = await navigator.xr.requestSession('immersive-ar', {
-                            requiredFeatures: [], 
-                            // درخواست همه ویژگی‌ها به صورت اختیاری
-                            optionalFeatures: ['image-tracking', 'dom-overlay'], 
-                            trackedImages: [
-                                {
-                                    image: imageBitmap,
-                                    widthInMeters: IMAGE_WIDTH
-                                }
-                            ],
-                            domOverlay: { root: document.body }
-                        });
-
-                        renderer.xr.setSession(session);
-                        debugDiv.innerHTML = "Scan 'target.jpg'";
-
-                    } catch (err) {
-                        arButton.style.display = "block";
-                        alert("Error: " + err.message);
-                    }
-                });
-
-            } catch (err) {
-                console.error(err);
-                debugDiv.innerHTML = "Image Error: " + err.message;
-                debugDiv.style.color = "red";
-            }
+            // 6. دکمه استاندارد AR
+            // فعلا Image Tracking را خاموش کردیم تا فقط دوربین را تست کنیم
+            document.body.appendChild(ARButton.createButton(renderer, {
+                requiredFeatures: [], 
+                optionalFeatures: [] 
+            }));
 
             window.addEventListener('resize', onWindowResize);
-            renderer.setAnimationLoop(render);
         }
 
         function onWindowResize() {
@@ -159,35 +78,15 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        function render(timestamp, frame) {
-            // چرخش مکعب زرد (تست زنده بودن رندر)
-            if(testCube) {
-                testCube.rotation.x += 0.02;
-                testCube.rotation.y += 0.02;
-                // اگر در حالت AR هستیم، مکعب زرد را جلوی دوربین نگه داریم (اختیاری)
-                // اینجا فقط می‌چرخانیمش
-            }
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
 
-            if (frame) {
-                const results = frame.getImageTrackingResults();
-                if (results && results.length > 0) {
-                    const hit = results[0];
-                    const pose = frame.getPose(hit.imageSpace, renderer.xr.getReferenceSpace());
+        function render() {
+            // چرخاندن مکعب
+            mesh.rotation.x += 0.01;
+            mesh.rotation.y += 0.01;
 
-                    if (pose) {
-                        trackedMesh.visible = true;
-                        trackedMesh.matrix.fromArray(pose.transform.matrix);
-                        debugDiv.innerHTML = "TARGET FOUND!";
-                        debugDiv.style.color = "#00ff00";
-                    } else {
-                        trackedMesh.visible = false;
-                        debugDiv.innerHTML = "Scanning...";
-                        debugDiv.style.color = "cyan";
-                    }
-                } else {
-                    trackedMesh.visible = false;
-                }
-            }
             renderer.render(scene, camera);
         }
     </script>
