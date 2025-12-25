@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pure Image Tracking</title>
+    <title>AR Marker Tracking</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
@@ -12,6 +12,7 @@
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
+    
     <script>
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true);
@@ -19,48 +20,47 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // دوربین و نور (حالت غیر AR)
+            // دوربین و نور (برای حالت قبل از AR)
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // UI دیباگ
+            // رابط کاربری (UI) برای پیام‌ها
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "Initializing...";
+            statusText.text = "Loading image...";
             statusText.color = "yellow";
-            statusText.fontSize = 20;
+            statusText.fontSize = 18;
             statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            statusText.top = "-50px";
+            statusText.top = "-80px";
+            statusText.textWrapping = true;
             advancedTexture.addControl(statusText);
 
-            // کیوب (نشانگر)
+            // مکعبی که روی مارکر ظاهر می‌شود
             const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene);
             const mat = new BABYLON.StandardMaterial("boxMat", scene);
-            mat.diffuseColor = new BABYLON.Color3(1, 0, 0); // قرمز
+            mat.diffuseColor = new BABYLON.Color3(0, 1, 0); // سبز
             box.material = mat;
             box.isVisible = false; 
 
-            // عکس
+            // *** تنظیمات تصویر جدید شما ***
             const trackableImage = {
-                src: "frame.png", 
-                estimatedRealWorldWidth: 0.2
+                // نام فایل دقیقاً مطابق اسکرین‌شات شما (با پسوند jpg)
+                src: "Gemini_Generated_Image_yf433uyf433uyf43.jpg", 
+                estimatedRealWorldWidth: 0.2 // فرض بر اینکه عرض عکس چاپ شده ۲۰ سانت است
             };
 
             try {
-                // *** کلید حل مشکل اینجاست ***
+                // تنظیمات WebXR (سبک شده برای جلوگیری از ارور)
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
-                        // این خط باعث می‌شود دنبال "کف زمین" نگردد و ارور ندهد
-                        referenceSpaceType: "local", 
+                        referenceSpaceType: "local", // کلید حل مشکل ارور فیچرها
                         onError: (error) => {
-                            statusText.text = "Error: " + error.message;
+                            statusText.text = "Session Error: " + error.message;
                             statusText.color = "red";
                         }
                     },
-                    // همه چیز را اختیاری کن
                     optionalFeatures: true,
-                    // غیرفعال کردن فیچرهای سنگین
                     disableTeleportation: true,
                     disablePointerSelection: true,
                     disableNearInteraction: true
@@ -68,23 +68,24 @@
 
                 const featuresManager = xr.baseExperience.featuresManager;
 
-                // فعال سازی Image Tracking
+                // فعال‌سازی Image Tracking
                 const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
                     images: [trackableImage]
                 });
 
-                statusText.text = "Scan the QR Code...";
+                statusText.text = "AR Ready. Scan the Image.";
                 statusText.color = "white";
 
+                // وقتی تصویر پیدا شد
                 imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
                     box.isVisible = true;
                     imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                    statusText.text = "FOUND!";
-                    statusText.color = "#00ff00";
+                    statusText.text = "TARGET FOUND!";
+                    statusText.color = "#00ff00"; // سبز روشن
                 });
 
             } catch (e) {
-                statusText.text = "Crash: " + e.message;
+                statusText.text = "Error: " + e.message;
                 statusText.color = "red";
             }
 
