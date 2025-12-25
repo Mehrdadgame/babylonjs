@@ -1,121 +1,87 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AR Image Check</title>
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <title>Debug White Screen</title>
     <style>
         html, body { overflow: hidden; width: 100%; height: 100%; margin: 0; padding: 0; }
         #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; }
+        #errorLog {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 50%;
+            background: rgba(0,0,0,0.8);
+            color: #ff5555;
+            font-family: monospace;
+            font-size: 16px;
+            padding: 20px;
+            pointer-events: none;
+            z-index: 999;
+            display: none; /* مخفی است مگر اروری باشد */
+            overflow-y: scroll;
+        }
     </style>
+    
+    <script>
+        window.onerror = function (msg, url, lineNo, columnNo, error) {
+            var log = document.getElementById('errorLog');
+            log.style.display = 'block';
+            log.innerHTML += "ERROR: " + msg + "<br>Line: " + lineNo + "<br><hr>";
+            return false;
+        };
+    </script>
+
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
 </head>
 <body>
+    <div id="errorLog">Waiting for errors...<br></div>
     <canvas id="renderCanvas"></canvas>
     
     <script>
+        // 1. چک کردن اینکه آیا Babylon لود شده؟
+        if (typeof BABYLON === 'undefined') {
+            throw new Error("Babylon.js did not load! Check internet/VPN.");
+        }
+
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true);
 
-        const createScene = async function () {
+        const createScene = function () {
             const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.2, 0.2, 0.3, 1); // پس زمینه آبی تیره
+
+            // دوربین
+            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
             
-            // دوربین معمولی
-            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 0, -1), scene);
+            // نور
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // UI
-            const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-            const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "1. Loading Image...";
-            statusText.color = "yellow";
-            statusText.fontSize = 20;
-            statusText.top = "-150px";
-            advancedTexture.addControl(statusText);
-
-            // === مرحله ۱: تست لود عکس ===
-            // نمایش عکس در محیط سه بعدی برای اطمینان از سالم بودن لینک
-            const plane = BABYLON.MeshBuilder.CreatePlane("testPlane", {size: 0.5}, scene);
+            // یک مکعب ساده برای تست
+            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 1}, scene);
             const mat = new BABYLON.StandardMaterial("mat", scene);
-            // نکته: حتما نام فایل را به target.jpg تغییر دهید
-            const texture = new BABYLON.Texture("target.jpg", scene);
-            
-            mat.diffuseTexture = texture;
-            mat.emissiveColor = new BABYLON.Color3(1, 1, 1); // روشن کردن عکس
-            plane.material = mat;
+            mat.diffuseColor = new BABYLON.Color3(1, 1, 0); // زرد
+            box.material = mat;
 
-            // بررسی اینکه عکس لود شده یا نه
-            texture.onLoadObservable.add(() => {
-                statusText.text = "Image Loaded OK!\n2. Starting AR...";
-                statusText.color = "cyan";
-                startAR(); // اگر عکس سالم بود، برو سراغ AR
+            // انیمیشن چرخش (تا بفهمیم صفحه فریز نشده)
+            scene.registerBeforeRender(() => {
+                box.rotation.y += 0.01;
+                box.rotation.x += 0.01;
             });
-
-            texture.onErrorObservable.add(() => {
-                statusText.text = "ERROR: Could not load 'target.jpg'.\nCheck filename on GitHub.";
-                statusText.color = "red";
-            });
-
-            // === مرحله ۲: شروع AR ===
-            async function startAR() {
-                // مخفی کردن عکس تست
-                plane.isVisible = false; 
-
-                // مکعب نشانگر
-                const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene);
-                const boxMat = new BABYLON.StandardMaterial("boxMat", scene);
-                boxMat.diffuseColor = new BABYLON.Color3(0, 1, 0);
-                box.material = boxMat;
-                box.isVisible = false;
-
-                const trackableImage = {
-                    src: "target.jpg", 
-                    estimatedRealWorldWidth: 0.2
-                };
-
-                try {
-                    const xr = await scene.createDefaultXRExperienceAsync({
-                        uiOptions: {
-                            sessionMode: "immersive-ar",
-                            referenceSpaceType: "local", // حالت امن
-                            onError: (error) => {
-                                statusText.text = "AR Error: " + error.message;
-                                statusText.color = "red";
-                            }
-                        },
-                        optionalFeatures: true,
-                        disableTeleportation: true,
-                        disablePointerSelection: true
-                    });
-
-                    const featuresManager = xr.baseExperience.featuresManager;
-                    const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                        images: [trackableImage]
-                    });
-
-                    statusText.text = "Scan Image NOW!";
-                    statusText.color = "white";
-
-                    imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                        box.isVisible = true;
-                        imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                        statusText.text = "TARGET FOUND!";
-                        statusText.color = "#00ff00";
-                    });
-
-                } catch (e) {
-                    statusText.text = "Session Failed: " + e.message;
-                    statusText.color = "red";
-                }
-            }
 
             return scene;
         };
 
-        createScene().then(scene => {
-            engine.runRenderLoop(() => scene.render());
-        });
-        window.addEventListener("resize", () => engine.resize());
+        try {
+            const scene = createScene();
+            engine.runRenderLoop(() => {
+                scene.render();
+            });
+            window.addEventListener("resize", () => engine.resize());
+        } catch (e) {
+            console.error(e);
+            throw e; // هدایت به پنجره خطا
+        }
     </script>
 </body>
 </html>
