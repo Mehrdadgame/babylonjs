@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AR Marker Tracking</title>
+    <title>Simple AR - Tap to Place</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
@@ -20,73 +20,81 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // دوربین و نور (برای حالت قبل از AR)
+            // دوربین و نور (حالت غیر AR)
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // رابط کاربری (UI) برای پیام‌ها
+            // UI دیباگ (برای دیدن وضعیت)
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "Loading image...";
+            statusText.text = "Initializing Simple AR...";
             statusText.color = "yellow";
-            statusText.fontSize = 18;
+            statusText.fontSize = 20;
             statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            statusText.top = "-80px";
-            statusText.textWrapping = true;
+            statusText.top = "-100px";
             advancedTexture.addControl(statusText);
 
-            // مکعبی که روی مارکر ظاهر می‌شود
-            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene);
-            const mat = new BABYLON.StandardMaterial("boxMat", scene);
-            mat.diffuseColor = new BABYLON.Color3(0, 1, 0); // سبز
-            box.material = mat;
-            box.isVisible = false; 
+            // ساخت یک نشانگر (یک دایره کوچک روی زمین که نشان دهد کجا کلیک می‌کنید)
+            const marker = BABYLON.MeshBuilder.CreateTorus("marker", {diameter: 0.15, thickness: 0.05}, scene);
+            marker.isVisible = false;
+            marker.rotationQuaternion = new BABYLON.Quaternion();
 
-            // *** تنظیمات تصویر جدید شما ***
-            const trackableImage = {
-                // نام فایل دقیقاً مطابق اسکرین‌شات شما (با پسوند jpg)
-                src: "Gemini_Generated_Image_yf433uyf433uyf43.jpg", 
-                estimatedRealWorldWidth: 0.2 // فرض بر اینکه عرض عکس چاپ شده ۲۰ سانت است
-            };
+            // ساخت مکعب اصلی (که قراره با کلیک ظاهر بشه)
+            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.2}, scene);
+            const mat = new BABYLON.StandardMaterial("boxMat", scene);
+            mat.diffuseColor = new BABYLON.Color3(0, 0.5, 1); // آبی
+            box.material = mat;
+            box.isVisible = false; // اولش مخفیه
 
             try {
-                // تنظیمات WebXR (سبک شده برای جلوگیری از ارور)
+                // شروع AR با تنظیمات ساده
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
-                        referenceSpaceType: "local", // کلید حل مشکل ارور فیچرها
+                        referenceSpaceType: "local-floor", // سعی می‌کنیم زمین را بشناسیم
                         onError: (error) => {
-                            statusText.text = "Session Error: " + error.message;
+                            statusText.text = "Error: " + error.message;
                             statusText.color = "red";
                         }
                     },
-                    optionalFeatures: true,
-                    disableTeleportation: true,
-                    disablePointerSelection: true,
-                    disableNearInteraction: true
+                    optionalFeatures: true, // جلوگیری از کرش
                 });
 
                 const featuresManager = xr.baseExperience.featuresManager;
 
-                // فعال‌سازی Image Tracking
-                const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                    images: [trackableImage]
-                });
+                // فعال‌سازی Hit Test (تشخیص برخورد با زمین)
+                const hitTest = featuresManager.enableFeature(BABYLON.WebXRFeatureName.HIT_TEST, "latest");
 
-                statusText.text = "AR Ready. Scan the Image.";
+                statusText.text = "AR Ready. Scan floor & Tap.";
                 statusText.color = "white";
 
-                // وقتی تصویر پیدا شد
-                imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                    box.isVisible = true;
-                    imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                    statusText.text = "TARGET FOUND!";
-                    statusText.color = "#00ff00"; // سبز روشن
+                // هر فریم چک می‌کنیم دوربین به کجا نگاه می‌کند
+                hitTest.onHitTestResultObservable.add((results) => {
+                    if (results.length) {
+                        marker.isVisible = true;
+                        // مارکر را جایی که دوربین نگاه می‌کند قرار بده
+                        results[0].transformationMatrix.decompose(marker.scaling, marker.rotationQuaternion, marker.position);
+                    } else {
+                        marker.isVisible = false;
+                    }
                 });
 
+                // وقتی روی صفحه ضربه زدید
+                scene.onPointerDown = (evt, pickInfo) => {
+                    if (marker.isVisible) {
+                        box.isVisible = true;
+                        // مکعب را ببر جای مارکر
+                        box.position.copyFrom(marker.position);
+                        statusText.text = "Box Placed!";
+                        statusText.color = "#00ff00";
+                    }
+                };
+
             } catch (e) {
-                statusText.text = "Error: " + e.message;
-                statusText.color = "red";
+                // اگر local-floor کار نکرد، حالت معلق (local) را تست می‌کنیم
+                statusText.text = "Retrying in generic mode...";
+                console.log(e);
             }
 
             return scene;
