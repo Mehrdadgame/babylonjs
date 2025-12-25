@@ -2,87 +2,72 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MindAR Image Tracking</title>
-
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, user-scalable=no">
-
-  <!-- Three.js -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-
-  <!-- MindAR -->
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+  <title>MindAR Fixed</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: transparent;
-    }
-    canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
   </style>
+
+  <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-three.prod.js"></script>
 </head>
 
 <body>
+  <script>
+    const startAR = async () => {
+      console.log("🚀 Starting MindAR...");
 
-<script>
-(async () => {
+      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        container: document.body,
+        // 3. استفاده از یک فایل نمونه آنلاین برای تست (عکس کارت راکون)
+        // بعداً فایل خودتان را جایگزین کنید
+        imageTargetSrc: "https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.2/examples/image-tracking/assets/card-example/card.mind",
+        maxTrack: 1,
+      });
 
-  console.log("🚀 MindAR init");
+      const { renderer, scene, camera } = mindarThree;
 
-  const mindarThree = new MINDAR.IMAGE.MindARThree({
-    container: document.body,
-    imageTargetSrc: "targets.mind", // 👈 اسم دقیق فایل
-    maxTrack: 1,
-    uiScanning: true,
-    uiLoading: true
-  });
+      // ساخت نور
+      const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+      scene.add(light);
 
-  const { renderer, scene, camera } = mindarThree;
+      // ساخت انکر (لنگر)
+      const anchor = mindarThree.addAnchor(0);
 
-  // نور
-  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-  scene.add(light);
+      // ساخت مکعب
+      const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5); // کمی بزرگتر کردم
+      const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+      const cube = new THREE.Mesh(geometry, material);
+      
+      // کمی بالا میاریم که روی کارت باشه
+      cube.position.set(0, 0, 0.3); 
+      
+      anchor.group.add(cube);
 
-  // Anchor برای target اول
-  const anchor = mindarThree.addAnchor(0);
+      // ایونت‌ها برای تست
+      anchor.onTargetFound = () => console.log("✅ TARGET FOUND");
+      anchor.onTargetLost = () => console.log("❌ TARGET LOST");
 
-  // مکعب تست
-  const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x00ff00
-  });
-  const cube = new THREE.Mesh(geometry, material);
-  cube.position.y = 0.15;
+      // شروع
+      try {
+        await mindarThree.start();
+        
+        // حلقه انیمیشن
+        renderer.setAnimationLoop(() => {
+          cube.rotation.x += 0.01;
+          cube.rotation.y += 0.01;
+          renderer.render(scene, camera);
+        });
+        
+      } catch (error) {
+        console.error("⛔ Error starting MindAR:", error);
+        alert("خطا در اجرای دوربین. لطفا کنسول مرورگر را چک کنید.");
+      }
+    };
 
-  anchor.group.add(cube);
-
-  // Eventها
-  anchor.onTargetFound = () => {
-    console.log("🎯 TARGET FOUND");
-  };
-
-  anchor.onTargetLost = () => {
-    console.log("❌ TARGET LOST");
-  };
-
-  // شروع AR
-  await mindarThree.start();
-
-  renderer.setAnimationLoop(() => {
-    cube.rotation.y += 0.01;
-    renderer.render(scene, camera);
-  });
-
-})();
-</script>
-
+    startAR();
+  </script>
 </body>
 </html>
