@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Three.js AR - Fixed Features</title>
+    <title>AR Working Final</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        /* تغییر مهم: پس زمینه باید شفاف باشد تا دوربین دیده شود */
+        body { margin: 0; overflow: hidden; background-color: transparent; font-family: sans-serif; }
+        
         #debug {
             position: absolute; top: 10px; left: 10px; color: yellow;
             font-size: 16px; pointer-events: none; z-index: 100; text-shadow: 1px 1px 2px black;
@@ -49,12 +51,12 @@
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
             scene.add(light);
 
+            // تنظیم شفافیت رندرر برای نمایش دوربین
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 0); // <--- این خط سیاهی را از بین می‌برد (شفافیت کامل)
             renderer.xr.enabled = true; 
-            
-            // حالت Local برای جلوگیری از کرش مربوط به تشخیص زمین
             renderer.xr.setReferenceSpaceType('local'); 
             
             document.body.appendChild(renderer.domElement);
@@ -74,18 +76,17 @@
                 const blob = await response.blob();
                 const imageBitmap = await createImageBitmap(blob);
 
-                debugDiv.innerHTML = "Image Ready. Press Button.";
+                debugDiv.innerHTML = "Ready. Press START.";
                 arButton.style.display = "block";
 
                 arButton.addEventListener('click', async () => {
                     try {
-                        debugDiv.innerHTML = "Requesting Session...";
+                        arButton.style.display = "none";
+                        debugDiv.innerHTML = "Starting Camera...";
                         
-                        // *** تغییر مهم اینجاست ***
-                        // همه ویژگی‌ها را به optionalFeatures منتقل کردیم تا مرورگر سخت‌گیری نکند
                         const session = await navigator.xr.requestSession('immersive-ar', {
-                            requiredFeatures: [], // لیست ویژگی‌های اجباری را خالی گذاشتیم
-                            optionalFeatures: ['image-tracking', 'dom-overlay'], // همه را اینجا درخواست می‌کنیم
+                            requiredFeatures: [], 
+                            optionalFeatures: ['image-tracking', 'dom-overlay'], 
                             trackedImages: [
                                 {
                                     image: imageBitmap,
@@ -96,13 +97,11 @@
                         });
 
                         renderer.xr.setSession(session);
-                        arButton.style.display = "none";
-                        debugDiv.innerHTML = "Session Started! Scan target.jpg";
+                        debugDiv.innerHTML = "Scan 'target.jpg' now!";
 
                     } catch (err) {
-                        alert("AR Error: " + err.message);
-                        debugDiv.innerHTML = "Error: " + err.message;
-                        debugDiv.style.color = "red";
+                        arButton.style.display = "block";
+                        alert("Error: " + err.message);
                     }
                 });
 
@@ -127,7 +126,6 @@
                 const results = frame.getImageTrackingResults();
                 if (results && results.length > 0) {
                     const hit = results[0];
-                    // گرفتن پوزیشن
                     const pose = frame.getPose(hit.imageSpace, renderer.xr.getReferenceSpace());
 
                     if (pose) {
@@ -136,7 +134,9 @@
                         debugDiv.innerHTML = "TARGET FOUND!";
                         debugDiv.style.color = "#00ff00";
                     } else {
-                        debugDiv.innerHTML = "Scanning...";
+                        // اگر عکس را گم کرد، مکعب مخفی شود
+                        trackedMesh.visible = false; 
+                        debugDiv.innerHTML = "Searching...";
                         debugDiv.style.color = "yellow";
                     }
                 } else {
