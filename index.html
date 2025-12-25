@@ -1,13 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>No-Overlay AR</title>
+    <title>Pure AR Camera Fix</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        /* شفافیت اجباری */
-        body { margin: 0; background-color: transparent !important; overflow: hidden; }
-        canvas { display: block; }
+        /* شفافیت مطلق */
+        html, body { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            background-color: transparent !important; 
+            overflow: hidden;
+        }
+        canvas { 
+            display: block; 
+            width: 100% !important; 
+            height: 100% !important;
+        }
+        /* دکمه شروع فقط قبل از ورود به AR دیده می‌شود */
+        #start-btn {
+            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+            padding: 15px 40px; background: white; color: black; border: none;
+            font-size: 18px; border-radius: 5px; z-index: 10;
+        }
     </style>
     <script type="importmap">
         {
@@ -19,28 +33,25 @@
     </script>
 </head>
 <body>
+    <button id="start-btn">START CAMERA</button>
+
     <script type="module">
         import * as THREE from 'three';
-        import { ARButton } from 'three/addons/webxr/ARButton.js';
 
         let camera, scene, renderer;
-        let targetMesh; // مکعب قرمز (هدف)
-        let debugMesh;  // مکعب آبی (تست سالم بودن)
-
+        let mesh;
+        const startBtn = document.getElementById('start-btn');
+        
+        // تنظیمات عکس
         const IMAGE_URL = 'target.jpg';
-        const IMAGE_WIDTH = 0.2; 
+        const IMAGE_WIDTH = 0.2;
 
         init();
-        animate();
 
-        async function init() {
-            const container = document.createElement('div');
-            document.body.appendChild(container);
-
-            // 1. صحنه (حیاتی: پس‌زمینه باید تهی باشد)
+        function init() {
+            // 1. تنظیمات صحنه (بسیار مهم: بدون بک‌گراند)
             scene = new THREE.Scene();
-            scene.background = null; 
-
+            
             // 2. دوربین
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
@@ -48,109 +59,101 @@
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
             scene.add(light);
 
-            // 4. رندرر (با تنظیمات شفافیت)
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
+            // 4. رندرر (حیاتی‌ترین بخش برای رفع سیاهی)
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true, 
+                alpha: true, // اجازه شفافیت
+                preserveDrawingBuffer: true // گاهی برای اندروید لازم است
+            });
+            renderer.setPixelRatio(1); // پیکسل ریشیو را روی 1 قفل می‌کنیم تا باگ ندهد
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000, 0); // پاک کردن سیاهی
             renderer.xr.enabled = true;
-            renderer.xr.setReferenceSpaceType('local');
-            container.appendChild(renderer.domElement);
+            document.body.appendChild(renderer.domElement);
 
-            // --- ساخت آبجکت‌ها ---
+            // 5. آبجکت‌ها
+            // الف) مکعب سبز (برای تست) - همیشه جلوی دوربین می‌چرخد
+            const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+            mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, 0, -0.5); // نیم متر جلوی دوربین
+            scene.add(mesh); // اضافه کردن به صحنه
 
-            // الف) مکعب قرمز (نشانگر پیدا شدن عکس)
+            // ب) مکعب قرمز (برای Image Tracking)
             const targetGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
             const targetMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-            targetMesh = new THREE.Mesh(targetGeo, targetMat);
-            targetMesh.matrixAutoUpdate = false; 
-            targetMesh.visible = false; 
+            const targetMesh = new THREE.Mesh(targetGeo, targetMat);
+            targetMesh.visible = false;
+            targetMesh.matrixAutoUpdate = false;
             scene.add(targetMesh);
 
-            // ب) مکعب آبی توخالی (نشانگر سالم بودن سیستم)
-            // این همیشه جلوی دوربین می‌چرخد تا مطمئن شویم صفحه سیاه نیست
-            const debugGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
-            const debugMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
-            debugMesh = new THREE.Mesh(debugGeo, debugMat);
-            debugMesh.position.set(0, 0, -0.3); // 30 سانت جلوی صورت
-            // این را به دوربین اضافه نمی‌کنیم، بلکه در render آپدیت می‌کنیم تا جلوی چشم بماند
-            scene.add(debugMesh); 
+            // 6. لود عکس و راه اندازی دکمه
+            setupAR(targetMesh);
+            
+            window.addEventListener('resize', onWindowResize);
+        }
 
-            // 5. لود عکس و دکمه AR
+        async function setupAR(targetMesh) {
             try {
+                // لود عکس
                 const response = await fetch(IMAGE_URL);
                 const blob = await response.blob();
                 const imageBitmap = await createImageBitmap(blob);
 
-                // دکمه AR بدون DOM Overlay (عامل اصلی سیاهی)
-                const button = ARButton.createButton(renderer, {
-                    requiredFeatures: [], 
-                    optionalFeatures: ['image-tracking'], // فقط عکس، بدون HTML
-                    trackedImages: [
-                        {
-                            image: imageBitmap,
-                            widthInMeters: IMAGE_WIDTH
+                // رویداد کلیک دکمه
+                startBtn.addEventListener('click', async () => {
+                    // **مهم:** دکمه را کاملاً حذف می‌کنیم تا صفحه خالص شود
+                    startBtn.style.display = 'none';
+
+                    const session = await navigator.xr.requestSession('immersive-ar', {
+                        requiredFeatures: [], // هیچ فیچر اجباری نمی‌گذاریم
+                        optionalFeatures: ['image-tracking'], // فقط عکس، بدون dom-overlay
+                        trackedImages: [
+                            {
+                                image: imageBitmap,
+                                widthInMeters: IMAGE_WIDTH
+                            }
+                        ]
+                    });
+
+                    renderer.xr.setReferenceSpaceType('local');
+                    renderer.xr.setSession(session);
+
+                    // حلقه رندر مخصوص AR
+                    renderer.setAnimationLoop((timestamp, frame) => {
+                        // چرخش مکعب سبز (تست)
+                        mesh.rotation.x += 0.05;
+                        mesh.rotation.y += 0.05;
+
+                        // لاجیک Image Tracking
+                        if (frame) {
+                            const results = frame.getImageTrackingResults();
+                            if (results && results.length > 0) {
+                                const hit = results[0];
+                                const pose = frame.getPose(hit.imageSpace, renderer.xr.getReferenceSpace());
+
+                                if (pose) {
+                                    targetMesh.visible = true;
+                                    targetMesh.matrix.fromArray(pose.transform.matrix);
+                                } else {
+                                    targetMesh.visible = false;
+                                }
+                            }
                         }
-                    ]
+                        renderer.render(scene, camera);
+                    });
                 });
-                document.body.appendChild(button);
 
             } catch (err) {
-                console.error("Image Load Error", err);
-                // اگر عکس لود نشد، یک مکعب بزرگ قرمز نشان بده که بفهمیم
-                const errGeo = new THREE.BoxGeometry(1, 0.1, 0.1);
-                const errMesh = new THREE.Mesh(errGeo, new THREE.MeshBasicMaterial({color:0xff0000}));
-                scene.add(errMesh);
+                alert("Error: " + err.message);
+                startBtn.textContent = "Error Loading";
             }
-
-            window.addEventListener('resize', onWindowResize);
         }
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function animate() {
-            renderer.setAnimationLoop(render);
-        }
-
-        function render(timestamp, frame) {
-            // 1. لاجیک مکعب آبی (دیباگ)
-            // همیشه آن را جلوی دوربین نگه می‌داریم
-            // گرفتن جهت دوربین
-            const camPos = new THREE.Vector3();
-            const camQuat = new THREE.Quaternion();
-            camera.getWorldPosition(camPos);
-            camera.getWorldQuaternion(camQuat);
-            
-            // قرار دادن مکعب آبی نیم متر جلوتر از دوربین
-            const forward = new THREE.Vector3(0, 0, -0.5).applyQuaternion(camQuat);
-            debugMesh.position.copy(camPos).add(forward);
-            debugMesh.rotation.x += 0.02;
-            debugMesh.rotation.y += 0.02;
-
-
-            // 2. لاجیک پیدا کردن عکس
-            if (frame) {
-                const results = frame.getImageTrackingResults();
-                if (results && results.length > 0) {
-                    const hit = results[0];
-                    const pose = frame.getPose(hit.imageSpace, renderer.xr.getReferenceSpace());
-
-                    if (pose) {
-                        targetMesh.visible = true;
-                        targetMesh.matrix.fromArray(pose.transform.matrix);
-                    } else {
-                        targetMesh.visible = false;
-                    }
-                } else {
-                    targetMesh.visible = false;
-                }
-            }
-
-            renderer.render(scene, camera);
         }
     </script>
 </body>
