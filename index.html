@@ -2,72 +2,85 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MindAR Fixed</title>
+  <title>MindAR Debugger</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
   <style>
-    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: black; }
+    
+    /* استایل پنل وضعیت برای دیدن مراحل */
+    #debug-panel {
+      position: absolute; top: 0; left: 0; width: 100%; padding: 20px;
+      color: yellow; font-family: monospace; font-size: 16px;
+      background: rgba(0,0,0,0.8); z-index: 9999; pointer-events: none;
+    }
   </style>
 
   <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
-
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-three.prod.js"></script>
 </head>
 
 <body>
+  <div id="debug-panel">Initializing...</div>
+
   <script>
-    const startAR = async () => {
-      console.log("🚀 Starting MindAR...");
+    const debugDiv = document.getElementById('debug-panel');
+    
+    function log(msg, color="yellow") {
+      debugDiv.innerHTML += `<br/><span style="color:${color}">${msg}</span>`;
+      console.log(msg);
+    }
 
-      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
-        container: document.body,
-        // 3. استفاده از یک فایل نمونه آنلاین برای تست (عکس کارت راکون)
-        // بعداً فایل خودتان را جایگزین کنید
-        imageTargetSrc: "https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.2/examples/image-tracking/assets/card-example/card.mind",
-        maxTrack: 1,
-      });
+    // بررسی اینکه آیا کتابخانه‌ها لود شده‌اند؟
+    if (!window.THREE) { log("❌ Three.js لود نشد (اینترنت چک شود)", "red"); }
+    else if (!window.MINDAR) { log("❌ MindAR لود نشد (فیلترشکن روشن کنید)", "red"); }
+    else { log("✅ کتابخانه‌ها لود شدند."); startApp(); }
 
-      const { renderer, scene, camera } = mindarThree;
-
-      // ساخت نور
-      const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-      scene.add(light);
-
-      // ساخت انکر (لنگر)
-      const anchor = mindarThree.addAnchor(0);
-
-      // ساخت مکعب
-      const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5); // کمی بزرگتر کردم
-      const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-      const cube = new THREE.Mesh(geometry, material);
-      
-      // کمی بالا میاریم که روی کارت باشه
-      cube.position.set(0, 0, 0.3); 
-      
-      anchor.group.add(cube);
-
-      // ایونت‌ها برای تست
-      anchor.onTargetFound = () => console.log("✅ TARGET FOUND");
-      anchor.onTargetLost = () => console.log("❌ TARGET LOST");
-
-      // شروع
+    async function startApp() {
       try {
+        log("🚀 تنظیمات MindAR...");
+        
+        const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+          container: document.body,
+          // فایل تست راکون (نیاز به فیلترشکن دارد)
+          imageTargetSrc: "https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.2/examples/image-tracking/assets/card-example/card.mind",
+          // حذف صفحه لودینگ سفید
+          uiLoading: "no", 
+          uiScanning: "yes", // نمایش اسکنر
+        });
+
+        const { renderer, scene, camera } = mindarThree;
+
+        // نور
+        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        scene.add(light);
+
+        // انکر
+        const anchor = mindarThree.addAnchor(0);
+        
+        // مکعب سبز
+        const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.z = 0.2;
+        anchor.group.add(cube);
+
+        log("⏳ در حال روشن کردن دوربین (صبر کنید)...");
+        
         await mindarThree.start();
         
-        // حلقه انیمیشن
+        log("📷 دوربین روشن شد!", "#00ff00");
+        log("✅ کارت راکون را جلوی دوربین بگیرید.");
+
         renderer.setAnimationLoop(() => {
           cube.rotation.x += 0.01;
           cube.rotation.y += 0.01;
           renderer.render(scene, camera);
         });
-        
-      } catch (error) {
-        console.error("⛔ Error starting MindAR:", error);
-        alert("خطا در اجرای دوربین. لطفا کنسول مرورگر را چک کنید.");
-      }
-    };
 
-    startAR();
+      } catch (err) {
+        log("⛔ خطای سیستمی: " + err.message, "red");
+      }
+    }
   </script>
 </body>
 </html>
