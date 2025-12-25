@@ -1,43 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>MindAR + Three.js Image Tracking</title>
+  <meta charset="UTF-8" />
+  <title>MindAR Image Tracking</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, user-scalable=no">
 
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: transparent;
-  }
-  #container {
-    width: 100%;
-    height: 100%;
-    position: relative;
-  }
-</style>
+  <!-- Three.js -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
-<!-- MindAR + Three.js -->
-<script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+  <!-- MindAR -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
 </head>
 
 <body>
-<div id="container"></div>
 
 <script>
 (async () => {
 
-  const container = document.querySelector("#container");
+  console.log("🚀 MindAR init");
 
-  // 1️⃣ MindAR setup
-  const mindarThree = new window.MINDAR.IMAGE.MindARThree({
-    container: container,
-    imageTargetSrc: "./target.mind",
+  const mindarThree = new MINDAR.IMAGE.MindARThree({
+    container: document.body,
+    imageTargetSrc: "targets.mind", // 👈 اسم دقیق فایل
     maxTrack: 1,
     uiScanning: true,
     uiLoading: true
@@ -45,36 +47,42 @@
 
   const { renderer, scene, camera } = mindarThree;
 
-  // 2️⃣ نور
-  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1.2);
+  // نور
+  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
   scene.add(light);
 
-  // 3️⃣ Anchor (ایمیج تارگت اول)
+  // Anchor برای target اول
   const anchor = mindarThree.addAnchor(0);
 
-  // 4️⃣ آبجکت سه‌بعدی (تست)
+  // مکعب تست
   const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-  const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x00ff00
+  });
   const cube = new THREE.Mesh(geometry, material);
-  cube.position.set(0, 0.15, 0);
+  cube.position.y = 0.15;
 
   anchor.group.add(cube);
 
-  // 5️⃣ انیمیشن
-  const clock = new THREE.Clock();
+  // Eventها
+  anchor.onTargetFound = () => {
+    console.log("🎯 TARGET FOUND");
+  };
 
-  // 6️⃣ استارت AR
+  anchor.onTargetLost = () => {
+    console.log("❌ TARGET LOST");
+  };
+
+  // شروع AR
   await mindarThree.start();
 
   renderer.setAnimationLoop(() => {
-    const delta = clock.getDelta();
-    cube.rotation.y += delta;
-    cube.rotation.x += delta * 0.5;
-
+    cube.rotation.y += 0.01;
     renderer.render(scene, camera);
   });
 
 })();
 </script>
+
 </body>
 </html>
