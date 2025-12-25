@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Three.js AR Fixed</title>
+    <title>Three.js AR - Fixed Features</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
@@ -10,7 +10,6 @@
             position: absolute; top: 10px; left: 10px; color: yellow;
             font-size: 16px; pointer-events: none; z-index: 100; text-shadow: 1px 1px 2px black;
         }
-        /* استایل دکمه دستی */
         #ar-button {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
             padding: 12px 24px; border: 1px solid white; border-radius: 4px; background: rgba(0,0,0,0.5);
@@ -38,32 +37,29 @@
         const debugDiv = document.getElementById('debug');
         const arButton = document.getElementById('ar-button');
 
-        // نام فایل عکس (حتما چک کنید target.jpg باشد)
         const IMAGE_URL = 'target.jpg'; 
         const IMAGE_WIDTH = 0.2; 
 
         init();
 
         async function init() {
-            // 1. ساخت صحنه
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
             scene.add(light);
 
-            // 2. رندرر WebGL
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true; // فعال‌سازی WebXR
+            renderer.xr.enabled = true; 
             
-            // *** نکته کلیدی: تغییر به حالت Local (مثل کدی که در Babylon کار کرد) ***
+            // حالت Local برای جلوگیری از کرش مربوط به تشخیص زمین
             renderer.xr.setReferenceSpaceType('local'); 
             
             document.body.appendChild(renderer.domElement);
 
-            // 3. ساخت مکعب قرمز
+            // مکعب قرمز
             const geometry = new THREE.BoxGeometry(0.15, 0.15, 0.15);
             const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
             trackedMesh = new THREE.Mesh(geometry, material);
@@ -73,41 +69,37 @@
 
             debugDiv.innerHTML = "Loading image...";
 
-            // 4. لود عکس و تنظیم دکمه AR
             try {
                 const response = await fetch(IMAGE_URL);
                 const blob = await response.blob();
                 const imageBitmap = await createImageBitmap(blob);
 
                 debugDiv.innerHTML = "Image Ready. Press Button.";
-                arButton.style.display = "block"; // نمایش دکمه
+                arButton.style.display = "block";
 
-                // مدیریت کلیک دکمه (با نمایش خطا)
                 arButton.addEventListener('click', async () => {
                     try {
                         debugDiv.innerHTML = "Requesting Session...";
                         
-                        // درخواست جلسه AR با تنظیمات دقیق
+                        // *** تغییر مهم اینجاست ***
+                        // همه ویژگی‌ها را به optionalFeatures منتقل کردیم تا مرورگر سخت‌گیری نکند
                         const session = await navigator.xr.requestSession('immersive-ar', {
-                            requiredFeatures: ['image-tracking'], // ویژگی اصلی
+                            requiredFeatures: [], // لیست ویژگی‌های اجباری را خالی گذاشتیم
+                            optionalFeatures: ['image-tracking', 'dom-overlay'], // همه را اینجا درخواست می‌کنیم
                             trackedImages: [
                                 {
                                     image: imageBitmap,
                                     widthInMeters: IMAGE_WIDTH
                                 }
                             ],
-                            // optionalFeatures را اضافه می‌کنیم تا اگر dom-overlay ساپورت نشد کرش نکند
-                            optionalFeatures: ['dom-overlay'],
                             domOverlay: { root: document.body }
                         });
 
-                        // وقتی جلسه با موفقیت شروع شد
                         renderer.xr.setSession(session);
-                        arButton.style.display = "none"; // مخفی کردن دکمه
-                        debugDiv.innerHTML = "Session Started! Scan Image.";
+                        arButton.style.display = "none";
+                        debugDiv.innerHTML = "Session Started! Scan target.jpg";
 
                     } catch (err) {
-                        // نمایش ارور اگر دکمه کار نکرد
                         alert("AR Error: " + err.message);
                         debugDiv.innerHTML = "Error: " + err.message;
                         debugDiv.style.color = "red";
@@ -131,12 +123,11 @@
         }
 
         function render(timestamp, frame) {
-            // لاجیک پیدا کردن عکس
             if (frame) {
                 const results = frame.getImageTrackingResults();
                 if (results && results.length > 0) {
                     const hit = results[0];
-                    // گرفتن پوزیشن در فضای Local
+                    // گرفتن پوزیشن
                     const pose = frame.getPose(hit.imageSpace, renderer.xr.getReferenceSpace());
 
                     if (pose) {
