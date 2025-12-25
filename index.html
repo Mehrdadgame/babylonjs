@@ -1,13 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="fa" dir="rtl">
 <head>
-    <title>Fixed AR Tracking</title>
+    <meta charset="UTF-8">
+    <title>AR with Github Image</title>
     <!-- استایل تمام صفحه -->
     <style>
         html, body { overflow: hidden; width: 100%; height: 100%; margin: 0; padding: 0; }
         #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; }
     </style>
-    <!-- Babylon.js -->
+    <!-- کتابخانه‌های Babylon.js -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
@@ -22,79 +23,93 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // دوربین و نور (فقط برای حالت غیر AR)
+            // دوربین معمولی (فقط قبل از ورود به AR استفاده می‌شود)
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // --- ساخت GUI ---
+            // --- رابط کاربری (GUI) ---
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "آماده‌سازی...";
+            statusText.text = "دکمه عینک پایین صفحه را بزنید...";
             statusText.color = "yellow";
             statusText.fontSize = 20;
-            statusText.top = "-100px"; 
+            statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            statusText.top = "100px";
             advancedTexture.addControl(statusText);
 
             // --- ساخت مکعب ---
             const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.1}, scene);
             const mat = new BABYLON.StandardMaterial("boxMat", scene);
-            mat.diffuseColor = new BABYLON.Color3(0, 1, 0); // سبز
+            mat.diffuseColor = new BABYLON.Color3(1, 0, 0); // قرمز (یعنی هنوز پیدا نشده)
             box.material = mat;
-            box.isVisible = false; // اولش مخفی باشد
+            box.isVisible = false; 
 
-            // --- تنظیمات عکس ---
-            // نکته: مطمئن شوید فایل frame.png کنار فایل html موجود است
+            // --- تنظیمات تصویر هدف (لینک گیت‌هاب شما) ---
             const trackableImage = {
-                src: "frame.png", 
-                estimatedRealWorldWidth: 0.2 // اندازه واقعی به متر (خیلی مهم)
+                // لینک مستقیم به فایل raw در گیت‌هاب
+                src: "https://github.com/Mehrdadgame/babylonjs/blob/main/frame.png?raw=true", 
+                
+                // اندازه واقعی عکس در دنیای واقعی به متر
+                // اگر عکس را روی کاغذ A4 پرینت کردید حدود 0.2 (20 سانت) مناسب است
+                estimatedRealWorldWidth: 0.2 
             };
 
             try {
-                // 1. تنظیمات اصلی XR
+                // 1. راه‌اندازی WebXR (با غیرفعال کردن فیچرهای مزاحم)
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
-                        referenceSpaceType: "local", // برای Image Tracking معمولا local بهتر است
+                        referenceSpaceType: "local", 
                     },
-                    // *** نکته کلیدی برای رفع ارور ***
-                    // این خطوط باعث می‌شوند Babylon قابلیت‌های پیش‌فرض (مثل Hit-Test) را 
-                    // که با برخی گوشی‌ها ناسازگارند، درخواست نکند.
+                    // غیرفعال کردن قابلیت‌هایی که ممکن است باعث ارور requiredFeatures شوند
                     disableTeleportation: true,
                     disablePointerSelection: true,
                     disableNearInteraction: true,
+                    optionalFeatures: true 
                 });
 
                 // 2. فعال‌سازی Image Tracking
                 const featuresManager = xr.baseExperience.featuresManager;
-
+                
+                // استفاده از try-catch داخلی برای اینکه اگر فیچر لود نشد، برنامه نبندد
                 try {
                     const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                        images: [trackableImage]
+                        images: [trackableImage],
+                        // نکته مهم: اگر required را true کنید و گوشی ساپورت نکند، ارور می‌دهد
+                        // با false کردن، برنامه اجرا می‌شود و اگر ساپورت شد، کار می‌کند
+                        required: false 
                     });
 
-                    statusText.text = "دوربین را روی عکس بگیرید";
-                    statusText.color = "white";
+                    // گوش دادن به وضعیت سیستم
+                    xr.baseExperience.onStateChangedObservable.add((state) => {
+                        if (state === BABYLON.WebXRState.IN_XR) {
+                             statusText.text = "دوربین را روی عکس نگه دارید...";
+                             statusText.color = "white";
+                        }
+                    });
 
                     // وقتی عکس پیدا شد
                     imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                        // مکعب را مرئی کن
                         box.isVisible = true;
                         
-                        // انتقال مختصات عکس واقعی به مکعب مجازی
+                        // انتقال پوزیشن و روتیشن عکس واقعی به باکس مجازی
                         imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
                         
+                        // تغییر رنگ به سبز و نمایش پیام
+                        box.material.diffuseColor = new BABYLON.Color3(0, 1, 0); 
                         statusText.text = "پیدا شد!\nX: " + box.position.x.toFixed(2);
                         statusText.color = "#00ff00";
                     });
 
                 } catch (featureErr) {
-                    statusText.text = "خطا در فعال‌سازی ردیابی تصویر: " + featureErr.message;
+                    console.warn(featureErr);
+                    statusText.text = "Image Tracking روی این گوشی فعال نشد.";
                 }
 
             } catch (e) {
                 console.error(e);
-                statusText.text = "خطای WebXR: " + e.message;
+                statusText.text = "Error: " + e.message;
                 statusText.color = "red";
             }
 
