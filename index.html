@@ -2,16 +2,14 @@
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>AR with Github Image</title>
-    <!-- استایل تمام صفحه -->
+    <title>Simple AR Test</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
     <style>
         html, body { overflow: hidden; width: 100%; height: 100%; margin: 0; padding: 0; }
         #renderCanvas { width: 100%; height: 100%; touch-action: none; outline: none; }
     </style>
-    <!-- کتابخانه‌های Babylon.js -->
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
@@ -23,94 +21,56 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // دوربین معمولی (فقط قبل از ورود به AR استفاده می‌شود)
+            // 1. دوربین و نور ساده
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // --- رابط کاربری (GUI) ---
+            // 2. ساخت یک مکعب (Cube)
+            // این مکعب همیشه در صحنه هست تا ببینیم AR کار می‌کند یا نه
+            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.2}, scene);
+            
+            // قرار دادن مکعب ۱ متر جلوتر (z) و کمی بالاتر (y)
+            box.position = new BABYLON.Vector3(0, 0.1, 1); 
+            
+            const material = new BABYLON.StandardMaterial("boxMat", scene);
+            material.diffuseColor = new BABYLON.Color3(0, 0.5, 1); // آبی
+            box.material = material;
+
+            // انیمیشن چرخش برای اینکه بفهمیم زنده است
+            scene.registerBeforeRender(() => {
+                box.rotation.y += 0.01;
+                box.rotation.x += 0.01;
+            });
+
+            // 3. رابط کاربری برای نمایش وضعیت
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "دکمه عینک پایین صفحه را بزنید...";
-            statusText.color = "yellow";
-            statusText.fontSize = 20;
-            statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-            statusText.top = "100px";
+            statusText.text = "دکمه عینک را بزنید...";
+            statusText.color = "white";
+            statusText.fontSize = 24;
+            statusText.top = "-100px";
             advancedTexture.addControl(statusText);
 
-            // --- ساخت مکعب ---
-            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.1}, scene);
-            const mat = new BABYLON.StandardMaterial("boxMat", scene);
-            mat.diffuseColor = new BABYLON.Color3(1, 0, 0); // قرمز (یعنی هنوز پیدا نشده)
-            box.material = mat;
-            box.isVisible = false; 
-
-            // --- تنظیمات تصویر هدف (لینک گیت‌هاب شما) ---
-            const trackableImage = {
-                // لینک مستقیم به فایل raw در گیت‌هاب
-                src: "https://github.com/Mehrdadgame/babylonjs/blob/main/frame.png?raw=true", 
-                
-                // اندازه واقعی عکس در دنیای واقعی به متر
-                // اگر عکس را روی کاغذ A4 پرینت کردید حدود 0.2 (20 سانت) مناسب است
-                estimatedRealWorldWidth: 0.2 
-            };
-
             try {
-                // 1. راه‌اندازی WebXR (با غیرفعال کردن فیچرهای مزاحم)
+                // 4. راه‌اندازی WebXR (حالت پایه)
+                // اینجا تمام فیچرهای اضافی را بستیم تا ارور ندهد
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
-                        referenceSpaceType: "local", 
                     },
-                    // غیرفعال کردن قابلیت‌هایی که ممکن است باعث ارور requiredFeatures شوند
-                    disableTeleportation: true,
-                    disablePointerSelection: true,
-                    disableNearInteraction: true,
-                    optionalFeatures: true 
+                    disableTeleportation: true,      // غیرفعال کردن تلپورت
+                    disablePointerSelection: true,   // غیرفعال کردن نشانگر موس
+                    disableNearInteraction: true,    // غیرفعال کردن تعامل نزدیک
+                    floorMeshes: []                  // غیرفعال کردن تشخیص زمین خودکار
                 });
 
-                // 2. فعال‌سازی Image Tracking
-                const featuresManager = xr.baseExperience.featuresManager;
-                
-                // استفاده از try-catch داخلی برای اینکه اگر فیچر لود نشد، برنامه نبندد
-                try {
-                    const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                        images: [trackableImage],
-                        // نکته مهم: اگر required را true کنید و گوشی ساپورت نکند، ارور می‌دهد
-                        // با false کردن، برنامه اجرا می‌شود و اگر ساپورت شد، کار می‌کند
-                        required: false 
-                    });
-
-                    // گوش دادن به وضعیت سیستم
-                    xr.baseExperience.onStateChangedObservable.add((state) => {
-                        if (state === BABYLON.WebXRState.IN_XR) {
-                             statusText.text = "دوربین را روی عکس نگه دارید...";
-                             statusText.color = "white";
-                        }
-                    });
-
-                    // وقتی عکس پیدا شد
-                    imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                        box.isVisible = true;
-                        
-                        // انتقال پوزیشن و روتیشن عکس واقعی به باکس مجازی
-                        imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                        
-                        // تغییر رنگ به سبز و نمایش پیام
-                        box.material.diffuseColor = new BABYLON.Color3(0, 1, 0); 
-                        statusText.text = "پیدا شد!\nX: " + box.position.x.toFixed(2);
-                        statusText.color = "#00ff00";
-                    });
-
-                } catch (featureErr) {
-                    console.warn(featureErr);
-                    statusText.text = "Image Tracking روی این گوشی فعال نشد.";
-                }
+                statusText.text = "سیستم آماده است (Basic Mode)";
 
             } catch (e) {
-                console.error(e);
                 statusText.text = "Error: " + e.message;
                 statusText.color = "red";
+                console.error(e);
             }
 
             return scene;
