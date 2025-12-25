@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Stable Image Tracking</title>
+    <title>AR Image Check</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
@@ -20,81 +20,93 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // 1. تنظیمات پایه (دوربین و نور برای حالت غیر AR)
-            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
+            // دوربین معمولی
+            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 0, -1), scene);
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // 2. سیستم نمایش پیام (UI) برای دیباگ
+            // UI
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "Preparing Image Tracking...";
+            statusText.text = "1. Loading Image...";
             statusText.color = "yellow";
-            statusText.fontSize = 22;
-            statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            statusText.top = "-100px";
-            statusText.textWrapping = true;
+            statusText.fontSize = 20;
+            statusText.top = "-150px";
             advancedTexture.addControl(statusText);
 
-            // 3. ساخت آبجکتی که قرار است روی تصویر ظاهر شود (مکعب سبز)
-            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene); 
-            const mat = new BABYLON.StandardMaterial("boxMat", scene);
-            mat.diffuseColor = new BABYLON.Color3(0, 1, 0); // سبز
-            box.material = mat;
-            box.isVisible = false; // ابتدا مخفی است
+            // === مرحله ۱: تست لود عکس ===
+            // نمایش عکس در محیط سه بعدی برای اطمینان از سالم بودن لینک
+            const plane = BABYLON.MeshBuilder.CreatePlane("testPlane", {size: 0.5}, scene);
+            const mat = new BABYLON.StandardMaterial("mat", scene);
+            // نکته: حتما نام فایل را به target.jpg تغییر دهید
+            const texture = new BABYLON.Texture("target.jpg", scene);
+            
+            mat.diffuseTexture = texture;
+            mat.emissiveColor = new BABYLON.Color3(1, 1, 1); // روشن کردن عکس
+            plane.material = mat;
 
-            // 4. تنظیمات فایل تصویری که باید ردیابی شود
-            const trackableImage = {
-                // نام فایل دقیقاً باید با فایل آپلود شده یکی باشد
-                src: "Gemini_Generated_Image_yf433uyf433uyf43.jpg", 
-                estimatedRealWorldWidth: 0.2 // عرض واقعی تصویر در دنیای واقعی (20 سانتیمتر)
-            };
+            // بررسی اینکه عکس لود شده یا نه
+            texture.onLoadObservable.add(() => {
+                statusText.text = "Image Loaded OK!\n2. Starting AR...";
+                statusText.color = "cyan";
+                startAR(); // اگر عکس سالم بود، برو سراغ AR
+            });
 
-            // 5. شروع WebXR
-            try {
-                const xr = await scene.createDefaultXRExperienceAsync({
-                    uiOptions: {
-                        sessionMode: "immersive-ar",
-                        // *** نکته کلیدی برای پایداری ***
-                        // استفاده از 'local' به جای 'local-floor' تا فشار کمتری به گوشی بیاید
-                        referenceSpaceType: "local", 
-                        onError: (error) => {
-                            statusText.text = "Session Error: " + error.message;
-                            statusText.color = "red";
-                        }
-                    },
-                    // غیرفعال کردن ویژگی‌های اضافی برای جلوگیری از تداخل
-                    optionalFeatures: true, 
-                    disableTeleportation: true,
-                    disablePointerSelection: true
-                });
-
-                const featuresManager = xr.baseExperience.featuresManager;
-
-                // فعال‌سازی ویژگی ردیابی تصویر
-                const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                    images: [trackableImage]
-                });
-
-                statusText.text = "AR Ready. Point camera at the image.";
-                statusText.color = "white";
-
-                // رویداد: وقتی تصویر پیدا شد یا مکانش آپدیت شد
-                imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                    // مکعب را نمایان کن
-                    box.isVisible = true;
-                    
-                    // انتقال مکعب دقیقاً روی عکس واقعی
-                    imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                    
-                    // تغییر متن وضعیت
-                    statusText.text = "TARGET FOUND!";
-                    statusText.color = "#00ff00"; // سبز روشن
-                });
-
-            } catch (e) {
-                console.error(e);
-                statusText.text = "Error during init: " + e.message;
+            texture.onErrorObservable.add(() => {
+                statusText.text = "ERROR: Could not load 'target.jpg'.\nCheck filename on GitHub.";
                 statusText.color = "red";
+            });
+
+            // === مرحله ۲: شروع AR ===
+            async function startAR() {
+                // مخفی کردن عکس تست
+                plane.isVisible = false; 
+
+                // مکعب نشانگر
+                const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene);
+                const boxMat = new BABYLON.StandardMaterial("boxMat", scene);
+                boxMat.diffuseColor = new BABYLON.Color3(0, 1, 0);
+                box.material = boxMat;
+                box.isVisible = false;
+
+                const trackableImage = {
+                    src: "target.jpg", 
+                    estimatedRealWorldWidth: 0.2
+                };
+
+                try {
+                    const xr = await scene.createDefaultXRExperienceAsync({
+                        uiOptions: {
+                            sessionMode: "immersive-ar",
+                            referenceSpaceType: "local", // حالت امن
+                            onError: (error) => {
+                                statusText.text = "AR Error: " + error.message;
+                                statusText.color = "red";
+                            }
+                        },
+                        optionalFeatures: true,
+                        disableTeleportation: true,
+                        disablePointerSelection: true
+                    });
+
+                    const featuresManager = xr.baseExperience.featuresManager;
+                    const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
+                        images: [trackableImage]
+                    });
+
+                    statusText.text = "Scan Image NOW!";
+                    statusText.color = "white";
+
+                    imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
+                        box.isVisible = true;
+                        imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
+                        statusText.text = "TARGET FOUND!";
+                        statusText.color = "#00ff00";
+                    });
+
+                } catch (e) {
+                    statusText.text = "Session Failed: " + e.message;
+                    statusText.color = "red";
+                }
             }
 
             return scene;
@@ -103,7 +115,6 @@
         createScene().then(scene => {
             engine.runRenderLoop(() => scene.render());
         });
-
         window.addEventListener("resize", () => engine.resize());
     </script>
 </body>
