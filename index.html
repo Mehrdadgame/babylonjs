@@ -1,161 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Three.js WebXR AR Safe</title>
+<meta charset="UTF-8" />
+<title>MindAR + Three.js Image Tracking</title>
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
 <style>
-    html, body {
-        margin: 0; padding: 0;
-        width: 100%; height: 100%;
-        overflow: hidden;
-        background-color: #222; /* placeholder dark background */
-    }
-    canvas {
-        display: block;
-        width: 100%; height: 100%;
-    }
-    #start-btn {
-        position: absolute;
-        bottom: 50px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 15px 40px;
-        background: white;
-        color: black;
-        font-size: 18px;
-        border: none;
-        border-radius: 5px;
-        z-index: 10;
-        cursor: pointer;
-    }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+  #container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+  }
 </style>
-<script type="importmap">
-{
-    "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-}
-</script>
+
+<!-- MindAR + Three.js -->
+<script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 </head>
+
 <body>
-<button id="start-btn">START AR</button>
+<div id="container"></div>
 
-<script type="module">
-import * as THREE from 'three';
+<script>
+(async () => {
 
-let camera, scene, renderer;
-let cube, targetMesh;
-let arStarted = false;
+  const container = document.querySelector("#container");
 
-const startBtn = document.getElementById('start-btn');
+  // 1️⃣ MindAR setup
+  const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+    container: container,
+    imageTargetSrc: "./target.mind",
+    maxTrack: 1,
+    uiScanning: true,
+    uiLoading: true
+  });
 
-// تنظیمات target image
-const IMAGE_URL = 'target.jpg';
-const IMAGE_WIDTH = 0.2; // متر
+  const { renderer, scene, camera } = mindarThree;
 
-init();
+  // 2️⃣ نور
+  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1.2);
+  scene.add(light);
 
-function init() {
-    // Scene
-    scene = new THREE.Scene();
+  // 3️⃣ Anchor (ایمیج تارگت اول)
+  const anchor = mindarThree.addAnchor(0);
 
-    // Camera
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+  // 4️⃣ آبجکت سه‌بعدی (تست)
+  const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+  const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+  const cube = new THREE.Mesh(geometry, material);
+  cube.position.set(0, 0.15, 0);
 
-    // Light
-    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-    scene.add(light);
+  anchor.group.add(cube);
 
-    // Renderer
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(1);
-    renderer.xr.enabled = true;
-    document.body.appendChild(renderer.domElement);
+  // 5️⃣ انیمیشن
+  const clock = new THREE.Clock();
 
-    // Mesh تستی (همیشه جلوی دوربین)
-    const geo = new THREE.BoxGeometry(0.1,0.1,0.1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
-    cube = new THREE.Mesh(geo, mat);
-    cube.position.set(0,0,-0.5);
-    scene.add(cube);
+  // 6️⃣ استارت AR
+  await mindarThree.start();
 
-    // Mesh target (قرمز)
-    const targetGeo = new THREE.BoxGeometry(0.15,0.15,0.15);
-    const targetMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-    targetMesh = new THREE.Mesh(targetGeo, targetMat);
-    targetMesh.visible = false;
-    targetMesh.matrixAutoUpdate = false;
-    scene.add(targetMesh);
+  renderer.setAnimationLoop(() => {
+    const delta = clock.getDelta();
+    cube.rotation.y += delta;
+    cube.rotation.x += delta * 0.5;
 
-    // Placeholder render loop قبل از AR
-    renderer.setAnimationLoop(() => {
-        cube.rotation.x += 0.01;
-        cube.rotation.y += 0.01;
-        renderer.render(scene, camera);
-    });
+    renderer.render(scene, camera);
+  });
 
-    // دکمه شروع AR
-    startBtn.addEventListener('click', async () => {
-        startBtn.style.display = 'none';
-        startAR();
-    });
-
-    window.addEventListener('resize', onWindowResize);
-}
-
-async function startAR() {
-    if (!navigator.xr) {
-        alert("WebXR not supported on this device");
-        return;
-    }
-
-    // چک پشتیبانی immersive-ar
-    const supported = await navigator.xr.isSessionSupported('immersive-ar');
-    if (!supported) {
-        alert("AR not supported on this device");
-        return;
-    }
-
-    try {
-        const session = await navigator.xr.requestSession('immersive-ar', {
-            requiredFeatures: [],
-            optionalFeatures: ['dom-overlay', 'image-tracking'],
-            domOverlay: { root: document.body }
-        });
-
-        renderer.xr.setReferenceSpaceType('local');
-        renderer.xr.setSession(session);
-
-        arStarted = true;
-
-        // حلقه رندر AR
-        renderer.setAnimationLoop((timestamp, frame) => {
-            cube.rotation.x += 0.01;
-            cube.rotation.y += 0.01;
-
-            if (frame) {
-                // فقط fallback ساده برای target mesh (placeholder)
-                // Image Tracking واقعی روی وب اغلب fail می‌شود
-                // targetMesh.visible = true; // فقط برای تست
-            }
-
-            renderer.render(scene, camera);
-        });
-
-    } catch(e) {
-        console.error("Failed to start AR:", e);
-        alert("Failed to start AR: " + e.message);
-    }
-}
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
+})();
 </script>
 </body>
 </html>
