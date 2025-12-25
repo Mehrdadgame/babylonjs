@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Babylon.js AR QR Tracker</title>
+    <title>AR QR Tracking</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
@@ -19,77 +19,70 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // 1. ساخت دوربین و نور (برای حالت غیر AR)
+            // دوربین معمولی برای زمانی که AR فعال نیست
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // 2. ساخت رابط کاربری برای نمایش وضعیت و ارورها
+            // UI برای دیباگ
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-            const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "Initializing AR...";
-            statusText.color = "yellow";
-            statusText.fontSize = 20;
-            statusText.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            statusText.top = "-100px";
-            advancedTexture.addControl(statusText);
+            const debugText = new BABYLON.GUI.TextBlock();
+            debugText.text = "Please open in Google Chrome Android";
+            debugText.color = "yellow";
+            debugText.fontSize = 24;
+            debugText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+            debugText.top = "-50px";
+            advancedTexture.addControl(debugText);
 
-            // 3. ساخت مکعب (نشانگر)
-            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene); // سایز 15 سانت
+            // ساخت مکعب (نشانگر)
+            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.1}, scene);
             const mat = new BABYLON.StandardMaterial("mat", scene);
-            mat.diffuseColor = new BABYLON.Color3(1, 0, 0); // قرمز
+            mat.diffuseColor = new BABYLON.Color3(0, 1, 0); // سبز
             box.material = mat;
-            box.isVisible = false; // فعلا مخفی
+            box.isVisible = false; 
 
-            // 4. تنظیمات Image Tracking
-            // نکته: فایل qr.png باید کنار فایل html باشد
-            const xrImage = {
-                src: "qr.png", 
-                estimatedRealWorldWidth: 0.2 // اندازه واقعی QR در دنیای واقعی (20 سانت)
-            };
-
-            // 5. شروع WebXR
+            // شروع تنظیمات WebXR
             try {
+                // تنظیمات Image Tracking
+                const xrImage = {
+                    src: "qr.png", 
+                    estimatedRealWorldWidth: 0.2
+                };
+
+                // مرحله 1: درخواست Session
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
                         onError: (error) => {
-                            statusText.text = "Error: " + error.message;
-                            statusText.color = "red";
+                            debugText.text = "Session Error: " + error.message;
+                            debugText.color = "red";
                         }
                     },
-                    optionalFeatures: true
+                    // مهم: غیرفعال کردن ویژگی‌های اضافی که ممکن است باعث ارور شود
+                    optionalFeatures: true, 
                 });
 
+                // مرحله 2: فعال کردن Image Tracking
                 const featuresManager = xr.baseExperience.featuresManager;
-
-                // فعال‌سازی ماژول ردیابی تصویر
+                
                 const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
                     images: [xrImage]
                 });
 
-                // وقتی سیستم آماده ردیابی شد
-                statusText.text = "AR Ready. Scan QR Code...";
-                statusText.color = "white";
+                debugText.text = "AR Ready. Point at QR.";
 
-                // وقتی تصویر پیدا شد یا آپدیت شد
+                // وقتی تصویر پیدا شد
                 imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                    // مکعب را نمایان کن
                     box.isVisible = true;
-                    
-                    // مکعب را به مکان QR منتقل کن
                     imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                    
-                    // نمایش مختصات
-                    statusText.text = `QR FOUND!\nX: ${box.position.x.toFixed(2)} Y: ${box.position.y.toFixed(2)}`;
-                    statusText.color = "#00ff00"; // سبز
+                    debugText.text = "QR Found!";
+                    debugText.color = "#00ff00";
                 });
 
             } catch (e) {
                 console.error(e);
-                statusText.text = "XR Init Failed: " + e.message;
-                statusText.color = "red";
+                debugText.text = "Global Error: " + e.message;
+                debugText.color = "red";
             }
 
             return scene;
@@ -98,7 +91,6 @@
         createScene().then(scene => {
             engine.runRenderLoop(() => scene.render());
         });
-
         window.addEventListener("resize", () => engine.resize());
     </script>
 </body>
