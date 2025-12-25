@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Lightweight AR Tracker</title>
+    <title>Fixed AR Tracking</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
@@ -20,72 +20,76 @@
         const createScene = async function () {
             const scene = new BABYLON.Scene(engine);
             
-            // دوربین معمولی (قبل از AR)
+            // دوربین معمولی
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
 
-            // UI برای دیباگ
+            // UI دیباگ
             const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
             const statusText = new BABYLON.GUI.TextBlock();
-            statusText.text = "Initializing Lite Mode...";
+            statusText.text = "Initializing...";
             statusText.color = "yellow";
-            statusText.fontSize = 20;
+            statusText.fontSize = 18;
             statusText.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            statusText.top = "-100px";
+            statusText.top = "-50px";
             advancedTexture.addControl(statusText);
 
-            // مکعب (نشانگر)
+            // مکعب سبز
             const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.15}, scene);
             const mat = new BABYLON.StandardMaterial("boxMat", scene);
-            mat.diffuseColor = new BABYLON.Color3(0, 1, 1); // فیروزه‌ای
+            mat.diffuseColor = new BABYLON.Color3(0, 1, 0); 
             box.material = mat;
             box.isVisible = false; 
 
-            // تنظیمات Image Tracking
+            // تنظیمات عکس
             const trackableImage = {
                 src: "frame.png", 
                 estimatedRealWorldWidth: 0.2 
             };
 
             try {
-                // *** تغییرات مهم اینجاست ***
-                // ما ویژگی‌های اضافی را خاموش می‌کنیم تا ارور ندهد
+                // *** تغییر حیاتی برای رفع ارور requiredFeatures ***
                 const xr = await scene.createDefaultXRExperienceAsync({
                     uiOptions: {
                         sessionMode: "immersive-ar",
+                        // نکته کلیدی: تغییر درخواست از "کف زمین" به "لوکال" ساده
+                        referenceSpaceType: "local", 
                         onError: (error) => {
                             statusText.text = "Session Error: " + error.message;
                             statusText.color = "red";
                         }
                     },
-                    // غیرفعال کردن قابلیت‌هایی که ممکن است باعث ارور شوند:
-                    disableTeleportation: true,      // تله‌پورت خاموش
-                    disablePointerSelection: true,   // انتخابگر خاموش
-                    disableNearInteraction: true,    // تعامل نزدیک خاموش
-                    optionalFeatures: true           // همه چیز را اختیاری کن
+                    // همه فیچرهای دیگر را خاموش یا اختیاری می‌کنیم
+                    optionalFeatures: true,
+                    disableTeleportation: true,
+                    disablePointerSelection: true
                 });
 
                 const featuresManager = xr.baseExperience.featuresManager;
 
                 // فعال‌سازی Image Tracking
-                const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
-                    images: [trackableImage]
-                });
+                try {
+                    const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
+                        images: [trackableImage]
+                    });
 
-                statusText.text = "AR Ready (Lite Mode).\nPoint at frame.png";
-                statusText.color = "white";
+                    statusText.text = "Ready. Point at frame.png";
+                    statusText.color = "white";
 
-                imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
-                    box.isVisible = true;
-                    imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
-                    statusText.text = "FOUND!";
-                    statusText.color = "#00ff00";
-                });
+                    imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
+                        box.isVisible = true;
+                        imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
+                        statusText.text = "Target Found!";
+                        statusText.color = "#00ff00";
+                    });
+                } catch(err) {
+                    statusText.text = "Image Tracking Failed: " + err.message;
+                }
 
             } catch (e) {
                 console.error(e);
-                statusText.text = "Critical Error: " + e.message;
+                statusText.text = "Startup Error: " + e.message;
                 statusText.color = "red";
             }
 
