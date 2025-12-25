@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Babylon.js QR AR Tracking</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <style>
+        body, #renderCanvas { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    </style>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const createScene = async function () {
+            const scene = new BABYLON.Scene(engine);
+            
+            // 1. ساخت دوربین و نور (برای تست در ادیتور، در AR دوربین موبایل جایگزین می‌شود)
+            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1, -5), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+
+            // 2. ساخت مکعب (که قراره روی QR نمایش داده بشه)
+            const box = BABYLON.MeshBuilder.CreateBox("box", {size: 0.2}, scene);
+            box.isVisible = false; // ابتدا مخفی است تا QR پیدا شود
+            
+            // ساخت متریال برای زیبایی مکعب
+            const material = new BABYLON.StandardMaterial("boxMat", scene);
+            material.diffuseColor = new BABYLON.Color3(0, 1, 1); // فیروزه‌ای
+            box.material = material;
+
+            // 3. رابط کاربری (UI) برای نمایش پوزیشن
+            const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
+            const textBlock = new BABYLON.GUI.TextBlock();
+            textBlock.text = "Waiting for QR Code...";
+            textBlock.color = "white";
+            textBlock.fontSize = 24;
+            textBlock.top = "40%"; // نمایش در پایین صفحه
+            advancedTexture.addControl(textBlock);
+
+            // 4. تنظیم WebXR و Image Tracking
+            // نکته: در اینجا باید URL تصویر QR Code خود را قرار دهید
+            const qrImageKey = "myQRCode";
+            const qrImageUrl = "https://your-domain.com/path-to-your-qr-image.png"; 
+
+            // بررسی پشتیبانی سیستم
+            const xr = await scene.createDefaultXRExperienceAsync({
+                uiOptions: {
+                    sessionMode: "immersive-ar",
+                },
+                optionalFeatures: true
+            });
+
+            const featuresManager = xr.baseExperience.featuresManager;
+
+            // تعریف تصاویر قابل ردیابی (Tracking Images)
+            const trackingImages = [
+                {
+                    src: qrImageUrl,
+                    estimatedRealWorldWidth: 0.2 // اندازه واقعی QR Code در دنیای واقعی (مثلا 20 سانتیمتر)
+                }
+            ];
+
+            // فعال‌سازی فیچر Image Tracking
+            try {
+                const imageTracking = featuresManager.enableFeature(BABYLON.WebXRFeatureName.IMAGE_TRACKING, "latest", {
+                    images: trackingImages
+                });
+
+                // 5. لاجیک ردیابی و آپدیت پوزیشن
+                imageTracking.onTrackedImageUpdatedObservable.add((imageObject) => {
+                    
+                    // اگر تصویر QR پیدا شد
+                    box.isVisible = true;
+                    
+                    // به‌روزرسانی مکان و چرخش مکعب طبق مکان QR
+                    imageObject.transformationMatrix.decompose(box.scaling, box.rotationQuaternion, box.position);
+                    
+                    // نمایش مختصات
+                    textBlock.text = `Position:\nX: ${box.position.x.toFixed(2)}\nY: ${box.position.y.toFixed(2)}\nZ: ${box.position.z.toFixed(2)}`;
+                });
+
+            } catch (e) {
+                console.log("Image Tracking not supported or failed to load");
+                textBlock.text = "Image Tracking Error";
+            }
+
+            return scene;
+        };
+
+        createScene().then(scene => {
+            engine.runRenderLoop(() => scene.render());
+        });
+
+        window.addEventListener("resize", () => engine.resize());
+    </script>
+</body>
+</html>
