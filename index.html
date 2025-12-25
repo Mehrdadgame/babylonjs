@@ -1,14 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Three.js AR Image Tracking</title>
+    <title>Three.js AR Fixed</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-        body { margin: 0; overflow: hidden; background-color: #222; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
         #debug {
             position: absolute; top: 10px; left: 10px; color: yellow;
-            font-family: monospace; font-size: 16px; pointer-events: none; z-index: 100;
+            font-size: 16px; pointer-events: none; z-index: 100; text-shadow: 1px 1px 2px black;
+        }
+        /* استایل دکمه دستی */
+        #ar-button {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            padding: 12px 24px; border: 1px solid white; border-radius: 4px; background: rgba(0,0,0,0.5);
+            color: white; font-size: 16px; cursor: pointer; z-index: 999; display: none;
         }
     </style>
     <script type="importmap">
@@ -21,87 +27,100 @@
     </script>
 </head>
 <body>
-    <div id="debug">Loading Three.js...</div>
+    <div id="debug">Initializing...</div>
+    <button id="ar-button">START AR</button>
 
     <script type="module">
         import * as THREE from 'three';
-        import { ARButton } from 'three/addons/webxr/ARButton.js';
 
-        let container;
         let camera, scene, renderer;
-        let trackedMesh; // مکعبی که روی عکس می‌افتد
-        let debugDiv = document.getElementById('debug');
+        let trackedMesh;
+        const debugDiv = document.getElementById('debug');
+        const arButton = document.getElementById('ar-button');
 
-        // تصویر هدف (همان عکسی که آپلود کردید)
+        // نام فایل عکس (حتما چک کنید target.jpg باشد)
         const IMAGE_URL = 'target.jpg'; 
-        const IMAGE_WIDTH = 0.2; // عرض واقعی به متر (20 سانت)
+        const IMAGE_WIDTH = 0.2; 
 
         init();
 
         async function init() {
-            container = document.createElement('div');
-            document.body.appendChild(container);
-
-            // 1. ساخت صحنه و دوربین
+            // 1. ساخت صحنه
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
-            // 2. نورپردازی
             const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
             scene.add(light);
 
-            // 3. رندرر
+            // 2. رندرر WebGL
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true; // فعال‌سازی WebXR
-            container.appendChild(renderer.domElement);
+            
+            // *** نکته کلیدی: تغییر به حالت Local (مثل کدی که در Babylon کار کرد) ***
+            renderer.xr.setReferenceSpaceType('local'); 
+            
+            document.body.appendChild(renderer.domElement);
 
-            // 4. ساخت آبجکت (مکعب قرمز)
+            // 3. ساخت مکعب قرمز
             const geometry = new THREE.BoxGeometry(0.15, 0.15, 0.15);
             const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
             trackedMesh = new THREE.Mesh(geometry, material);
-            
-            // تنظیم ماتریس به‌صورت دستی (چون AR مستقیما ماتریس می‌دهد)
             trackedMesh.matrixAutoUpdate = false; 
-            trackedMesh.visible = false; // ابتدا مخفی
+            trackedMesh.visible = false; 
             scene.add(trackedMesh);
 
-            debugDiv.innerHTML = "Loading 'target.jpg'...";
+            debugDiv.innerHTML = "Loading image...";
 
-            // 5. آماده‌سازی تصویر برای AR
+            // 4. لود عکس و تنظیم دکمه AR
             try {
-                // لود عکس و تبدیل به بیت‌مپ
                 const response = await fetch(IMAGE_URL);
                 const blob = await response.blob();
                 const imageBitmap = await createImageBitmap(blob);
 
-                debugDiv.innerHTML = "Image Loaded. Click AR Button.";
+                debugDiv.innerHTML = "Image Ready. Press Button.";
+                arButton.style.display = "block"; // نمایش دکمه
 
-                // 6. دکمه AR با تنظیمات Image Tracking
-                const button = ARButton.createButton(renderer, {
-                    requiredFeatures: ['image-tracking'], // ویژگی اجباری
-                    trackedImages: [
-                        {
-                            image: imageBitmap,
-                            widthInMeters: IMAGE_WIDTH
-                        }
-                    ],
-                    optionalFeatures: ['dom-overlay'],
-                    domOverlay: { root: document.body }
+                // مدیریت کلیک دکمه (با نمایش خطا)
+                arButton.addEventListener('click', async () => {
+                    try {
+                        debugDiv.innerHTML = "Requesting Session...";
+                        
+                        // درخواست جلسه AR با تنظیمات دقیق
+                        const session = await navigator.xr.requestSession('immersive-ar', {
+                            requiredFeatures: ['image-tracking'], // ویژگی اصلی
+                            trackedImages: [
+                                {
+                                    image: imageBitmap,
+                                    widthInMeters: IMAGE_WIDTH
+                                }
+                            ],
+                            // optionalFeatures را اضافه می‌کنیم تا اگر dom-overlay ساپورت نشد کرش نکند
+                            optionalFeatures: ['dom-overlay'],
+                            domOverlay: { root: document.body }
+                        });
+
+                        // وقتی جلسه با موفقیت شروع شد
+                        renderer.xr.setSession(session);
+                        arButton.style.display = "none"; // مخفی کردن دکمه
+                        debugDiv.innerHTML = "Session Started! Scan Image.";
+
+                    } catch (err) {
+                        // نمایش ارور اگر دکمه کار نکرد
+                        alert("AR Error: " + err.message);
+                        debugDiv.innerHTML = "Error: " + err.message;
+                        debugDiv.style.color = "red";
+                    }
                 });
-                document.body.appendChild(button);
 
             } catch (err) {
                 console.error(err);
-                debugDiv.innerHTML = "Error loading image: " + err.message;
+                debugDiv.innerHTML = "Image Load Error: " + err.message;
                 debugDiv.style.color = "red";
             }
 
-            // مدیریت تغییر سایز صفحه
             window.addEventListener('resize', onWindowResize);
-
-            // شروع حلقه رندر
             renderer.setAnimationLoop(render);
         }
 
@@ -111,36 +130,28 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // حلقه اصلی رندر
         function render(timestamp, frame) {
+            // لاجیک پیدا کردن عکس
             if (frame) {
-                // دریافت نتایج ردیابی تصویر از فریم WebXR
                 const results = frame.getImageTrackingResults();
-
                 if (results && results.length > 0) {
-                    const hit = results[0]; // اولین تصویر پیدا شده
-                    
-                    // بررسی وضعیت ردیابی
+                    const hit = results[0];
+                    // گرفتن پوزیشن در فضای Local
                     const pose = frame.getPose(hit.imageSpace, renderer.xr.getReferenceSpace());
 
                     if (pose) {
-                        // تصویر پیدا شد!
                         trackedMesh.visible = true;
-                        
-                        // انتقال مکان مکعب به مکان تصویر
                         trackedMesh.matrix.fromArray(pose.transform.matrix);
-                        
                         debugDiv.innerHTML = "TARGET FOUND!";
                         debugDiv.style.color = "#00ff00";
                     } else {
-                         debugDiv.innerHTML = "Searching...";
-                         debugDiv.style.color = "yellow";
+                        debugDiv.innerHTML = "Scanning...";
+                        debugDiv.style.color = "yellow";
                     }
                 } else {
                     trackedMesh.visible = false;
                 }
             }
-
             renderer.render(scene, camera);
         }
     </script>
